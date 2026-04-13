@@ -1,6 +1,6 @@
 /**
- * Full Didact — missions 3–5.
- * Mission 5: public API; JSX is compiled by Babel in app.js (not in this file).
+ * Missions 1–2 base + Mission 3 + Mission 4.
+ * Mission 4: updateFunctionComponent + useState (no JSX — use createElement).
  */
 
 function createElement(type, props, ...children) {

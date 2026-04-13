@@ -1,6 +1,6 @@
 /**
- * Full Didact — missions 3–5.
- * Mission 5: public API; JSX is compiled by Babel in app.js (not in this file).
+ * Mission 3 only — commit phase, updateDom, reconcileChildren.
+ * Host elements only (no function components / hooks).
  */
 
 function createElement(type, props, ...children) {
@@ -31,9 +31,6 @@ let nextUnitOfWork = null;
 let wipRoot = null;
 let currentRoot = null;
 let deletions = null;
-
-let wipFiber = null;
-let hookIndex = null;
 
 function render(element, container) {
   wipRoot = {
@@ -186,21 +183,11 @@ function updateHostComponent(fiber) {
   reconcileChildren(fiber, fiber.props.children);
 }
 
-function updateFunctionComponent(fiber) {
-  wipFiber = fiber;
-  hookIndex = 0;
-  wipFiber.hooks = [];
-  const children = [fiber.type(fiber.props)];
-  reconcileChildren(fiber, children);
-}
-
 function performUnitOfWork(fiber) {
-  const isFunctionComponent = fiber.type instanceof Function;
-  if (isFunctionComponent) {
-    updateFunctionComponent(fiber);
-  } else {
-    updateHostComponent(fiber);
+  if (fiber.type instanceof Function) {
+    throw new Error("Mission 3: apenas elementos host — use Mission 4 para funções.");
   }
+  updateHostComponent(fiber);
 
   if (fiber.child) {
     return fiber.child;
@@ -232,40 +219,29 @@ function workLoop(deadline) {
 
 requestIdleCallback(workLoop);
 
-function useState(initial) {
-  const oldHook =
-    wipFiber.alternate &&
-    wipFiber.alternate.hooks &&
-    wipFiber.alternate.hooks[hookIndex];
-  const hook = {
-    state: oldHook ? oldHook.state : initial,
-    queue: [],
-  };
+const Didact = { createElement, render };
 
-  const queue = oldHook ? oldHook.queue : [];
-  hook.state = queue.reduce((state, action) => {
-    return typeof action === "function" ? action(state) : action;
-  }, hook.state);
+// --- Teste Missão 3 (enunciado): PLACEMENT + UPDATE após 2s ---
+const container = document.getElementById("root");
 
-  wipFiber.hooks.push(hook);
-  hookIndex++;
-
-  const setState = (action) => {
-    hook.queue.push(action);
-    wipRoot = {
-      dom: currentRoot.dom,
-      props: currentRoot.props,
-      alternate: currentRoot,
-    };
-    deletions = [];
-    nextUnitOfWork = wipRoot;
-  };
-
-  return [hook.state, setState];
+function updateApp(title, description) {
+  const element = Didact.createElement(
+    "div",
+    { style: "background: lightblue; padding: 20px; border-radius: 8px;" },
+    Didact.createElement("h1", null, title),
+    Didact.createElement("p", null, description)
+  );
+  Didact.render(element, container);
 }
 
-const Didact = {
-  createElement,
-  render,
-  useState,
-};
+updateApp(
+  "Mission 3: Fiber Tree works! 🌳",
+  "Wait 2 seconds for the update..."
+);
+
+setTimeout(() => {
+  updateApp(
+    "Mission 3: Reconciliation works! 🔄",
+    "The DOM was updated without recreating the wrapper div."
+  );
+}, 2000);
