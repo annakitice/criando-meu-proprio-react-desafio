@@ -1,6 +1,6 @@
 /**
- * Full Didact — missions 3–5.
- * Mission 5: public API; JSX is compiled by Babel in app.js (not in this file).
+ * Missão 3 — Fase de render vs commit, updateDom, reconciliação.
+ * (Missões 1–2: createElement / fibers; aqui só elementos host, sem hooks.)
  */
 
 function createElement(type, props, ...children) {
@@ -32,9 +32,7 @@ let wipRoot = null;
 let currentRoot = null;
 let deletions = null;
 
-let wipFiber = null;
-let hookIndex = null;
-
+/* --- Render phase: não mexe no DOM; só enfileira a raiz WIP e liga ao alternate --- */
 function render(element, container) {
   wipRoot = {
     dom: container,
@@ -45,9 +43,13 @@ function render(element, container) {
   nextUnitOfWork = wipRoot;
 }
 
+/* --- Commit phase: depois que o work loop terminou, aplica efeitos ao DOM de uma vez --- */
 function commitRoot() {
+  // Primeiro remove nós marcados para deleção (lista global preenchida na reconciliação).
   deletions.forEach(commitWork);
+  // Percorre a árvore wip a partir do primeiro filho da raiz e aplica PLACEMENT/UPDATE/DELETION.
   commitWork(wipRoot.child);
+  // A árvore wip vira a árvore “current”: o que está na tela.
   currentRoot = wipRoot;
   wipRoot = null;
 }
@@ -55,6 +57,7 @@ function commitRoot() {
 function commitWork(fiber) {
   if (!fiber) return;
 
+  // Componente de função não tem DOM; sobe até achar um ancestral com nó de host.
   let domParentFiber = fiber.parent;
   while (domParentFiber && !domParentFiber.dom) {
     domParentFiber = domParentFiber.parent;
@@ -86,6 +89,13 @@ const isProperty = (key) => key !== "children" && !isEvent(key);
 const isNew = (prev, next) => (key) => prev[key] !== next[key];
 const isGone = (prev, next) => (key) => !(key in next);
 
+/**
+ * updateDom — ordem do enunciado:
+ * 1) remover listeners que mudaram ou sumiram
+ * 2) remover props normais que não existem mais
+ * 3) setar props novas ou alteradas
+ * 4) registrar listeners novos ou alterados
+ */
 function updateDom(dom, prevProps, nextProps) {
   Object.keys(prevProps)
     .filter(isEvent)
@@ -118,6 +128,10 @@ function updateDom(dom, prevProps, nextProps) {
     });
 }
 
+/**
+ * reconcileChildren — três casos:
+ * mesmo type → UPDATE (reusa dom); tipo novo → PLACEMENT; fiber velho sem match → DELETION.
+ */
 function reconcileChildren(wipFiber, elements) {
   let index = 0;
   let oldFiber = wipFiber.alternate && wipFiber.alternate.child;
@@ -186,21 +200,11 @@ function updateHostComponent(fiber) {
   reconcileChildren(fiber, fiber.props.children);
 }
 
-function updateFunctionComponent(fiber) {
-  wipFiber = fiber;
-  hookIndex = 0;
-  wipFiber.hooks = [];
-  const children = [fiber.type(fiber.props)];
-  reconcileChildren(fiber, children);
-}
-
 function performUnitOfWork(fiber) {
-  const isFunctionComponent = fiber.type instanceof Function;
-  if (isFunctionComponent) {
-    updateFunctionComponent(fiber);
-  } else {
-    updateHostComponent(fiber);
+  if (fiber.type instanceof Function) {
+    throw new Error("Missão 3: apenas elementos host — Missão 4 para funções.");
   }
+  updateHostComponent(fiber);
 
   if (fiber.child) {
     return fiber.child;
@@ -232,40 +236,29 @@ function workLoop(deadline) {
 
 requestIdleCallback(workLoop);
 
-function useState(initial) {
-  const oldHook =
-    wipFiber.alternate &&
-    wipFiber.alternate.hooks &&
-    wipFiber.alternate.hooks[hookIndex];
-  const hook = {
-    state: oldHook ? oldHook.state : initial,
-    queue: [],
-  };
+const Didact = { createElement, render };
 
-  const queue = oldHook ? oldHook.queue : [];
-  hook.state = queue.reduce((state, action) => {
-    return typeof action === "function" ? action(state) : action;
-  }, hook.state);
+// --- Teste do enunciado (PLACEMENT + reconciliação UPDATE após 2s) ---
+const container = document.getElementById("root");
 
-  wipFiber.hooks.push(hook);
-  hookIndex++;
-
-  const setState = (action) => {
-    hook.queue.push(action);
-    wipRoot = {
-      dom: currentRoot.dom,
-      props: currentRoot.props,
-      alternate: currentRoot,
-    };
-    deletions = [];
-    nextUnitOfWork = wipRoot;
-  };
-
-  return [hook.state, setState];
+function updateApp(title, description) {
+  const element = Didact.createElement(
+    "div",
+    { style: "background: lightblue; padding: 20px; border-radius: 8px;" },
+    Didact.createElement("h1", null, title),
+    Didact.createElement("p", null, description)
+  );
+  Didact.render(element, container);
 }
 
-const Didact = {
-  createElement,
-  render,
-  useState,
-};
+updateApp(
+  "Mission 3: Fiber Tree works! 🌳",
+  "Wait 2 seconds for the update..."
+);
+
+setTimeout(() => {
+  updateApp(
+    "Mission 3: Reconciliation works! 🔄",
+    "The DOM was updated without recreating the wrapper div."
+  );
+}, 2000);
