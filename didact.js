@@ -269,4 +269,23 @@ const Didact = {
   render,
 }
 
-export default Didact
+// --- CÓDIGO DE TESTE ---
+const container = document.getElementById("root");
+
+function updateApp(title, description) {
+  const element = Didact.createElement(
+    "div",
+    { style: "background: lightblue; padding: 20px; border-radius: 8px; font-family: sans-serif;" },
+    Didact.createElement("h1", null, title),
+    Didact.createElement("p", null, description)
+  );
+  Didact.render(element, container);
+}
+
+// Renderização inicial
+updateApp("Mission 3: Fiber Tree works! 🌳", "Wait 2 seconds for the update...");
+
+// Atualização após 2 segundos
+setTimeout(() => {
+  updateApp("Mission 3: Reconciliation works! 🔄", "The DOM was updated without recreating the wrapper div.");
+}, 2000);
