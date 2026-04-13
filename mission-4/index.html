@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Didact — Missão 4</title>
+</head>
+<body>
+  <div id="root"></div>
+  <script src="didact.js"></script>
+  <!-- Teste Missão 4 (enunciado): componente de função com createElement -->
+  <script>
+    const container = document.getElementById("root");
+
+    function Greeting(props) {
+      return Didact.createElement(
+        "h1",
+        { style: "color: green;" },
+        "Mission 4: Hello, ",
+        props.name,
+        "!"
+      );
+    }
+
+    const App = Didact.createElement(Greeting, { name: "Function Components" });
+    Didact.render(App, container);
+  </script>
+</body>
+</html>
