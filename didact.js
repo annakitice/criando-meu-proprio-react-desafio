@@ -3,6 +3,10 @@ let currentRoot = null
 let wipRoot = null
 let deletions = null
 
+// --- MISSÃO 4: Cursores globais para os Hooks ---
+let wipFiber = null
+let hookIndex = null
+
 // --- MISSÃO 1: Criando a árvore de elementos ---
 function createElement(type, props, ...children) {
   return {
@@ -85,10 +89,58 @@ function performUnitOfWork(fiber) {
   return null
 }
 
+// --- MISSÃO 4: updateFunctionComponent atualizado ---
 function updateFunctionComponent(fiber) {
-  // Pega os filhos executando a função do componente (sem os hooks por enquanto)
+  // Prepara o cursor para o hook
+  wipFiber = fiber
+  hookIndex = 0
+  wipFiber.hooks = []
+  
+  // Quando chamamos fiber.type(fiber.props), qualquer chamada de useState
+  // dentro do componente conseguirá ler e alterar os cursores acima.
   const children = [fiber.type(fiber.props)]
   reconcileChildren(fiber, children)
+}
+
+// --- MISSÃO 4: Implementação do useState ---
+function useState(initial) {
+  // 1. Recupera o estado antigo
+  const oldHook =
+    wipFiber.alternate &&
+    wipFiber.alternate.hooks &&
+    wipFiber.alternate.hooks[hookIndex]
+
+  // 2. Inicializa o novo hook
+  const hook = {
+    state: oldHook ? oldHook.state : initial,
+    queue: [],
+  }
+
+  // 3. Processa a fila de atualizações (Batching)
+  const actions = oldHook ? oldHook.queue : []
+  actions.forEach(action => {
+    hook.state = typeof action === "function" ? action(hook.state) : action
+  })
+
+  // 4. O Dispatcher (setState)
+  const setState = action => {
+    hook.queue.push(action)
+    
+    // Configura o wipRoot para iniciar uma nova renderização (acorda o Work Loop)
+    wipRoot = {
+      dom: currentRoot.dom,
+      props: currentRoot.props,
+      alternate: currentRoot,
+    }
+    nextUnitOfWork = wipRoot
+    deletions = []
+  }
+
+  // 5. Avança o cursor
+  wipFiber.hooks.push(hook)
+  hookIndex++
+
+  return [hook.state, setState]
 }
 
 function updateHostComponent(fiber) {
@@ -264,28 +316,27 @@ function updateDom(dom, prevProps, nextProps) {
     })
 }
 
+// Adicionamos o useState aqui para ser consumido em outros arquivos!
 const Didact = {
   createElement,
   render,
+  useState, 
 }
 
-// --- CÓDIGO DE TESTE ---
+// --- CÓDIGO DE TESTE MISSÃO 4 ---
 const container = document.getElementById("root");
 
-function updateApp(title, description) {
-  const element = Didact.createElement(
-    "div",
-    { style: "background: lightblue; padding: 20px; border-radius: 8px; font-family: sans-serif;" },
-    Didact.createElement("h1", null, title),
-    Didact.createElement("p", null, description)
+// Um Componente Funcional de verdade!
+function Greeting(props) {
+  return Didact.createElement(
+    "h1", 
+    { style: "color: green; font-family: sans-serif;" }, 
+    "Mission 4: Hello, ", 
+    props.name, 
+    "!"
   );
-  Didact.render(element, container);
 }
 
-// Renderização inicial
-updateApp("Mission 3: Fiber Tree works! 🌳", "Wait 2 seconds for the update...");
+const App = Didact.createElement(Greeting, { name: "Function Components" });
 
-// Atualização após 2 segundos
-setTimeout(() => {
-  updateApp("Mission 3: Reconciliation works! 🔄", "The DOM was updated without recreating the wrapper div.");
-}, 2000);
+Didact.render(App, container);
