@@ -1,3 +1,9 @@
+let nextUnitOfWork = null
+let currentRoot = null
+let wipRoot = null
+let deletions = null
+
+// --- MISSÃO 1: Criando a árvore de elementos ---
 function createElement(type, props, ...children) {
   return {
     type,
@@ -12,7 +18,6 @@ function createElement(type, props, ...children) {
   }
 }
 
-
 function createTextElement(text) {
   return {
     type: "TEXT_ELEMENT",
@@ -23,47 +28,245 @@ function createTextElement(text) {
   }
 }
 
+// --- MISSÃO 3.1: Render Phase ---
+// Substitui a renderização síncrona: configura a wipRoot (work-in-progress root)
+// para calcularmos as mudanças sem travar a thread principal (sem tocar no DOM ainda).
 function render(element, container) {
-  //Criar o nó do DOM
-  const dom =
-    element.type === "TEXT_ELEMENT"
-      ? document.createTextNode("")
-      : document.createElement(element.type);
+  wipRoot = {
+    dom: container,
+    props: {
+      children: [element],
+    },
+    alternate: currentRoot, // Aponta para a árvore refletida no DOM atualmente
+  }
 
-  //Atribuir as propriedades (props)
-  const isProperty = key => key !== "children";
-  
-  Object.keys(element.props)
-    .filter(isProperty)
-    .forEach(name => {
-      dom[name] = element.props[name];
-    });
-
-  //Chamar recursivamente o render para cada filho
-  element.props.children.forEach(child =>
-    render(child, dom)
-  );
-
-  //Adicionar o nó criado ao container pai
-  container.appendChild(dom);
+  deletions = []
+  nextUnitOfWork = wipRoot // Inicia o trabalho do Scheduler
 }
 
-const Didact = { createElement, render };
+// --- MISSÃO 2: Scheduler e Loop de Trabalho ---
+function workLoop(deadline) {
+  let shouldYield = false
 
+  while (nextUnitOfWork && !shouldYield) {
+    nextUnitOfWork = performUnitOfWork(nextUnitOfWork)
+    shouldYield = deadline.timeRemaining() < 1
+  }
 
-//CÓDIGO DE TESTE (MISSÃO 1)
+  if (!nextUnitOfWork && wipRoot) {
+    commitRoot()
+  }
 
+  requestIdleCallback(workLoop)
+}
 
-// Criando a árvore de elementos manualmente 
-const element = Didact.createElement(
-  "div",
-  { style: "background: salmon; padding: 20px; border-radius: 8px; font-family: sans-serif;" },
-  Didact.createElement("h1", { style: "color: white;" }, "Mission 1: Success! 🎉"),
-  Didact.createElement("p", null, "If you can see this, your DOM creation is working.")
-);
+requestIdleCallback(workLoop)
 
-// Pegando o container raiz do HTML
-const container = document.getElementById("root");
+function performUnitOfWork(fiber) {
+  const isFunctionComponent = fiber.type instanceof Function
 
-// Renderizando na tela
-Didact.render(element, container);
+  if (isFunctionComponent) {
+    updateFunctionComponent(fiber)
+  } else {
+    updateHostComponent(fiber)
+  }
+
+  // Navegação: 1. Vai para o primeiro filho, se existir
+  if (fiber.child) return fiber.child
+
+  let nextFiber = fiber
+  while (nextFiber) {
+    // Navegação: 2. Vai para o irmão, se existir
+    if (nextFiber.sibling) return nextFiber.sibling
+    // Navegação: 3. Se não tem irmão, volta para o pai e procura o irmão do pai (uncle)
+    nextFiber = nextFiber.parent
+  }
+
+  return null
+}
+
+function updateFunctionComponent(fiber) {
+  // Pega os filhos executando a função do componente (sem os hooks por enquanto)
+  const children = [fiber.type(fiber.props)]
+  reconcileChildren(fiber, children)
+}
+
+function updateHostComponent(fiber) {
+  if (!fiber.dom) {
+    fiber.dom = createDom(fiber)
+  }
+
+  reconcileChildren(fiber, fiber.props.children)
+}
+
+function createDom(fiber) {
+  const dom =
+    fiber.type === "TEXT_ELEMENT"
+      ? document.createTextNode("")
+      : document.createElement(fiber.type)
+
+  updateDom(dom, {}, fiber.props)
+  return dom
+}
+
+// --- MISSÃO 3.3: Reconciliação (Diffing Algorithm) ---
+function reconcileChildren(wipFiber, elements) {
+  let index = 0
+  let oldFiber = wipFiber.alternate && wipFiber.alternate.child
+  let prevSibling = null
+
+  while (index < elements.length || oldFiber != null) {
+    const element = elements[index]
+    let newFiber = null
+
+    const sameType =
+      oldFiber &&
+      element &&
+      element.type === oldFiber.type
+
+    // Case 1: same type → UPDATE
+    // O tipo do elemento é o mesmo, reciclamos o nó do DOM existente
+    if (sameType) {
+      newFiber = {
+        type: oldFiber.type,
+        props: element.props,
+        dom: oldFiber.dom,
+        parent: wipFiber,
+        alternate: oldFiber,
+        effectTag: "UPDATE",
+      }
+    }
+
+    // Case 2: new element, different type → PLACEMENT
+    // O tipo é diferente ou é novo, precisamos criar um nó DOM do zero
+    if (element && !sameType) {
+      newFiber = {
+        type: element.type,
+        props: element.props,
+        dom: null,
+        parent: wipFiber,
+        alternate: null,
+        effectTag: "PLACEMENT",
+      }
+    }
+
+    // Case 3: old fiber exists, different type → DELETION
+    // O nó antigo é obsoleto, marcamos para deletar do DOM
+    if (oldFiber && !sameType) {
+      oldFiber.effectTag = "DELETION"
+      deletions.push(oldFiber)
+    }
+
+    if (oldFiber) {
+      oldFiber = oldFiber.sibling
+    }
+
+    if (index === 0) {
+      wipFiber.child = newFiber
+    } else if (prevSibling) {
+      prevSibling.sibling = newFiber
+    }
+
+    prevSibling = newFiber
+    index++
+  }
+}
+
+// --- MISSÃO 3.1: Commit Phase ---
+// Aplica todas as mudanças de uma vez ao DOM (fase atômica) para evitar UI quebrado
+function commitRoot() {
+  // Remove nós marcados com DELETION
+  deletions.forEach(commitWork)
+  // Aplica PLACEMENT e UPDATE a partir do primeiro filho da wipRoot
+  commitWork(wipRoot.child)
+  // Atualiza a árvore atual (currentRoot) refletindo o novo estado do DOM
+  currentRoot = wipRoot
+  wipRoot = null
+}
+
+function commitWork(fiber) {
+  if (!fiber) return
+
+  // Sobe a árvore de fibers para encontrar o primeiro pai que possui um nó de DOM real
+  let domParentFiber = fiber.parent
+  while (!domParentFiber.dom) {
+    domParentFiber = domParentFiber.parent
+  }
+  const domParent = domParentFiber.dom
+
+  // Baseado na tag calculada na reconciliação, aplica a mutação correspondente no DOM
+  if (fiber.effectTag === "PLACEMENT" && fiber.dom != null) {
+    // Adiciona novo elemento visual ao DOM
+    domParent.appendChild(fiber.dom)
+  } else if (fiber.effectTag === "UPDATE" && fiber.dom != null) {
+    // Atualiza atributos/eventos reciclando o elemento visual já existente
+    updateDom(fiber.dom, fiber.alternate.props, fiber.props)
+  } else if (fiber.effectTag === "DELETION") {
+    // Remove o elemento visual obsoleto
+    commitDeletion(fiber, domParent)
+  }
+
+  // Continua a aplicação para os filhos e depois para os irmãos (ordem determinística)
+  commitWork(fiber.child)
+  commitWork(fiber.sibling)
+}
+
+function commitDeletion(fiber, domParent) {
+  // Se a fiber tem um nó DOM (ex: elementos HTML), remove do pai.
+  // Se for um componente funcional (que não tem DOM próprio), desce para os filhos recursivamente.
+  if (fiber.dom) {
+    domParent.removeChild(fiber.dom)
+  } else {
+    commitDeletion(fiber.child, domParent)
+  }
+}
+
+// --- MISSÃO 3.2: updateDom ---
+const isEvent = key => key.startsWith("on")
+const isProperty = key => key !== "children" && !isEvent(key)
+// Funções auxiliares para filtrar apenas o que de fato mudou (performance)
+const isNew = (prev, next) => key => prev[key] !== next[key]
+const isGone = (prev, next) => key => !(key in next)
+
+function updateDom(dom, prevProps, nextProps) {
+  // 1. Remove event listeners antigos ou que sofreram alterações
+  Object.keys(prevProps)
+    .filter(isEvent)
+    .filter(key => !(key in nextProps) || isNew(prevProps, nextProps)(key))
+    .forEach(name => {
+      const eventType = name.toLowerCase().substring(2)
+      dom.removeEventListener(eventType, prevProps[name])
+    })
+
+  // 2. Remove propriedades normais que não existem mais
+  Object.keys(prevProps)
+    .filter(isProperty)
+    .filter(isGone(prevProps, nextProps))
+    .forEach(name => {
+      dom[name] = ""
+    })
+
+  // 3. Define propriedades novas ou que tiveram seus valores alterados
+  Object.keys(nextProps)
+    .filter(isProperty)
+    .filter(isNew(prevProps, nextProps))
+    .forEach(name => {
+      dom[name] = nextProps[name]
+    })
+
+  // 4. Adiciona event listeners novos ou alterados
+  Object.keys(nextProps)
+    .filter(isEvent)
+    .filter(isNew(prevProps, nextProps))
+    .forEach(name => {
+      const eventType = name.toLowerCase().substring(2)
+      dom.addEventListener(eventType, nextProps[name])
+    })
+}
+
+const Didact = {
+  createElement,
+  render,
+}
+
+export default Didact
