@@ -1,3 +1,10 @@
+/**
+ * Didact — GRUDSMV Aula 03 (missions 1–2 base + 3–5).
+ * Mission 3: commit phase, updateDom, reconcileChildren.
+ * Mission 4: updateFunctionComponent, useState.
+ * Mission 5: export { createElement, render, useState }.
+ */
+
 function createElement(type, props, ...children) {
   return {
     type,
@@ -22,12 +29,13 @@ function createTextElement(text) {
   };
 }
 
-// --- Mission 3: render/commit split, updateDom, reconciliation ---
-
 let nextUnitOfWork = null;
 let wipRoot = null;
 let currentRoot = null;
 let deletions = null;
+
+let wipFiber = null;
+let hookIndex = null;
 
 function render(element, container) {
   wipRoot = {
@@ -180,12 +188,18 @@ function updateHostComponent(fiber) {
   reconcileChildren(fiber, fiber.props.children);
 }
 
+function updateFunctionComponent(fiber) {
+  wipFiber = fiber;
+  hookIndex = 0;
+  wipFiber.hooks = [];
+  const children = [fiber.type(fiber.props)];
+  reconcileChildren(fiber, children);
+}
+
 function performUnitOfWork(fiber) {
   const isFunctionComponent = fiber.type instanceof Function;
   if (isFunctionComponent) {
-    if (typeof updateFunctionComponent === "function") {
-      updateFunctionComponent(fiber);
-    }
+    updateFunctionComponent(fiber);
   } else {
     updateHostComponent(fiber);
   }
@@ -220,29 +234,40 @@ function workLoop(deadline) {
 
 requestIdleCallback(workLoop);
 
-const Didact = { createElement, render };
+function useState(initial) {
+  const oldHook =
+    wipFiber.alternate &&
+    wipFiber.alternate.hooks &&
+    wipFiber.alternate.hooks[hookIndex];
+  const hook = {
+    state: oldHook ? oldHook.state : initial,
+    queue: [],
+  };
 
-// --- Mission 3 test (enunciado): PLACEMENT + UPDATE após 2s ---
-const container = document.getElementById("root");
+  const queue = oldHook ? oldHook.queue : [];
+  hook.state = queue.reduce((state, action) => {
+    return typeof action === "function" ? action(state) : action;
+  }, hook.state);
 
-function updateApp(title, description) {
-  const element = Didact.createElement(
-    "div",
-    { style: "background: lightblue; padding: 20px; border-radius: 8px;" },
-    Didact.createElement("h1", null, title),
-    Didact.createElement("p", null, description)
-  );
-  Didact.render(element, container);
+  wipFiber.hooks.push(hook);
+  hookIndex++;
+
+  const setState = (action) => {
+    hook.queue.push(action);
+    wipRoot = {
+      dom: currentRoot.dom,
+      props: currentRoot.props,
+      alternate: currentRoot,
+    };
+    deletions = [];
+    nextUnitOfWork = wipRoot;
+  };
+
+  return [hook.state, setState];
 }
 
-updateApp(
-  "Mission 3: Fiber Tree works! 🌳",
-  "Wait 2 seconds for the update..."
-);
-
-setTimeout(() => {
-  updateApp(
-    "Mission 3: Reconciliation works! 🔄",
-    "The DOM was updated without recreating the wrapper div."
-  );
-}, 2000);
+const Didact = {
+  createElement,
+  render,
+  useState,
+};
