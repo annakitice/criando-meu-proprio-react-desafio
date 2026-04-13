@@ -1,6 +1,6 @@
 /**
- * Mission 3 only — commit phase, updateDom, reconcileChildren.
- * Host elements only (no function components / hooks).
+ * Missão 3 — Fase de render vs commit, updateDom, reconciliação.
+ * (Missões 1–2: createElement / fibers; aqui só elementos host, sem hooks.)
  */
 
 function createElement(type, props, ...children) {
@@ -32,6 +32,7 @@ let wipRoot = null;
 let currentRoot = null;
 let deletions = null;
 
+/* --- Render phase: não mexe no DOM; só enfileira a raiz WIP e liga ao alternate --- */
 function render(element, container) {
   wipRoot = {
     dom: container,
@@ -42,9 +43,13 @@ function render(element, container) {
   nextUnitOfWork = wipRoot;
 }
 
+/* --- Commit phase: depois que o work loop terminou, aplica efeitos ao DOM de uma vez --- */
 function commitRoot() {
+  // Primeiro remove nós marcados para deleção (lista global preenchida na reconciliação).
   deletions.forEach(commitWork);
+  // Percorre a árvore wip a partir do primeiro filho da raiz e aplica PLACEMENT/UPDATE/DELETION.
   commitWork(wipRoot.child);
+  // A árvore wip vira a árvore “current”: o que está na tela.
   currentRoot = wipRoot;
   wipRoot = null;
 }
@@ -52,6 +57,7 @@ function commitRoot() {
 function commitWork(fiber) {
   if (!fiber) return;
 
+  // Componente de função não tem DOM; sobe até achar um ancestral com nó de host.
   let domParentFiber = fiber.parent;
   while (domParentFiber && !domParentFiber.dom) {
     domParentFiber = domParentFiber.parent;
@@ -83,6 +89,13 @@ const isProperty = (key) => key !== "children" && !isEvent(key);
 const isNew = (prev, next) => (key) => prev[key] !== next[key];
 const isGone = (prev, next) => (key) => !(key in next);
 
+/**
+ * updateDom — ordem do enunciado:
+ * 1) remover listeners que mudaram ou sumiram
+ * 2) remover props normais que não existem mais
+ * 3) setar props novas ou alteradas
+ * 4) registrar listeners novos ou alterados
+ */
 function updateDom(dom, prevProps, nextProps) {
   Object.keys(prevProps)
     .filter(isEvent)
@@ -115,6 +128,10 @@ function updateDom(dom, prevProps, nextProps) {
     });
 }
 
+/**
+ * reconcileChildren — três casos:
+ * mesmo type → UPDATE (reusa dom); tipo novo → PLACEMENT; fiber velho sem match → DELETION.
+ */
 function reconcileChildren(wipFiber, elements) {
   let index = 0;
   let oldFiber = wipFiber.alternate && wipFiber.alternate.child;
@@ -185,7 +202,7 @@ function updateHostComponent(fiber) {
 
 function performUnitOfWork(fiber) {
   if (fiber.type instanceof Function) {
-    throw new Error("Mission 3: apenas elementos host — use Mission 4 para funções.");
+    throw new Error("Missão 3: apenas elementos host — Missão 4 para funções.");
   }
   updateHostComponent(fiber);
 
@@ -221,7 +238,7 @@ requestIdleCallback(workLoop);
 
 const Didact = { createElement, render };
 
-// --- Teste Missão 3 (enunciado): PLACEMENT + UPDATE após 2s ---
+// --- Teste do enunciado (PLACEMENT + reconciliação UPDATE após 2s) ---
 const container = document.getElementById("root");
 
 function updateApp(title, description) {
