@@ -3,9 +3,11 @@ let currentRoot = null
 let wipRoot = null
 let deletions = null
 
+// --- MISSÃO 4: Cursores globais para os Hooks ---
 let wipFiber = null
 let hookIndex = null
 
+// --- MISSÃO 1: Criando a árvore de elementos ---
 function createElement(type, props, ...children) {
   return {
     type,
@@ -30,6 +32,7 @@ function createTextElement(text) {
   }
 }
 
+// --- MISSÃO 3.1: Render Phase ---
 function render(element, container) {
   wipRoot = {
     dom: container,
@@ -40,9 +43,10 @@ function render(element, container) {
   }
 
   deletions = []
-  nextUnitOfWork = wipRoot
+  nextUnitOfWork = wipRoot 
 }
 
+// --- MISSÃO 2: Scheduler e Loop de Trabalho ---
 function workLoop(deadline) {
   let shouldYield = false
 
@@ -80,47 +84,54 @@ function performUnitOfWork(fiber) {
   return null
 }
 
+// --- MISSÃO 4: updateFunctionComponent atualizado ---
 function updateFunctionComponent(fiber) {
+  // Prepara o cursor para o hook
   wipFiber = fiber
   hookIndex = 0
   wipFiber.hooks = []
-
+  
+  // Quando chamamos fiber.type(fiber.props), qualquer chamada de useState
+  // dentro do componente conseguirá ler e alterar os cursores acima.
   const children = [fiber.type(fiber.props)]
   reconcileChildren(fiber, children)
 }
 
+// --- MISSÃO 4: Implementação do useState ---
 function useState(initial) {
+  // 1. Recupera o estado antigo
   const oldHook =
     wipFiber.alternate &&
     wipFiber.alternate.hooks &&
     wipFiber.alternate.hooks[hookIndex]
 
+  // 2. Inicializa o novo hook
   const hook = {
     state: oldHook ? oldHook.state : initial,
     queue: [],
   }
 
+  // 3. Processa a fila de atualizações (Batching)
   const actions = oldHook ? oldHook.queue : []
   actions.forEach(action => {
-    hook.state =
-      typeof action === "function"
-        ? action(hook.state)
-        : action
+    hook.state = typeof action === "function" ? action(hook.state) : action
   })
 
+  // 4. O Dispatcher (setState)
   const setState = action => {
     hook.queue.push(action)
-
+    
+    // Configura o wipRoot para iniciar uma nova renderização (acorda o Work Loop)
     wipRoot = {
       dom: currentRoot.dom,
       props: currentRoot.props,
       alternate: currentRoot,
     }
-
     nextUnitOfWork = wipRoot
     deletions = []
   }
 
+  // 5. Avança o cursor
   wipFiber.hooks.push(hook)
   hookIndex++
 
@@ -145,10 +156,10 @@ function createDom(fiber) {
   return dom
 }
 
+// --- MISSÃO 3.3: Reconciliação (Diffing Algorithm) ---
 function reconcileChildren(wipFiber, elements) {
   let index = 0
-  let oldFiber =
-    wipFiber.alternate && wipFiber.alternate.child
+  let oldFiber = wipFiber.alternate && wipFiber.alternate.child
   let prevSibling = null
 
   while (index < elements.length || oldFiber != null) {
@@ -202,6 +213,7 @@ function reconcileChildren(wipFiber, elements) {
   }
 }
 
+// --- MISSÃO 3.1: Commit Phase ---
 function commitRoot() {
   deletions.forEach(commitWork)
   commitWork(wipRoot.child)
@@ -216,7 +228,6 @@ function commitWork(fiber) {
   while (!domParentFiber.dom) {
     domParentFiber = domParentFiber.parent
   }
-
   const domParent = domParentFiber.dom
 
   if (fiber.effectTag === "PLACEMENT" && fiber.dom != null) {
@@ -239,12 +250,16 @@ function commitDeletion(fiber, domParent) {
   }
 }
 
+// --- MISSÃO 3.2: updateDom ---
 const isEvent = key => key.startsWith("on")
 const isProperty = key => key !== "children" && !isEvent(key)
+const isNew = (prev, next) => key => prev[key] !== next[key]
+const isGone = (prev, next) => key => !(key in next)
 
 function updateDom(dom, prevProps, nextProps) {
   Object.keys(prevProps)
     .filter(isEvent)
+    .filter(key => !(key in nextProps) || isNew(prevProps, nextProps)(key))
     .forEach(name => {
       const eventType = name.toLowerCase().substring(2)
       dom.removeEventListener(eventType, prevProps[name])
@@ -252,30 +267,48 @@ function updateDom(dom, prevProps, nextProps) {
 
   Object.keys(prevProps)
     .filter(isProperty)
+    .filter(isGone(prevProps, nextProps))
     .forEach(name => {
-      if (!(name in nextProps)) {
-        dom[name] = ""
-      }
+      dom[name] = ""
     })
 
   Object.keys(nextProps)
     .filter(isProperty)
+    .filter(isNew(prevProps, nextProps))
     .forEach(name => {
       dom[name] = nextProps[name]
     })
 
   Object.keys(nextProps)
     .filter(isEvent)
+    .filter(isNew(prevProps, nextProps))
     .forEach(name => {
       const eventType = name.toLowerCase().substring(2)
       dom.addEventListener(eventType, nextProps[name])
     })
 }
 
+// Adicionamos o useState aqui para ser consumido em outros arquivos!
 const Didact = {
   createElement,
   render,
-  useState,
+  useState, 
 }
 
-export default Didact
+// --- CÓDIGO DE TESTE MISSÃO 4 ---
+const container = document.getElementById("root");
+
+// Um Componente Funcional de verdade!
+function Greeting(props) {
+  return Didact.createElement(
+    "h1", 
+    { style: "color: green; font-family: sans-serif;" }, 
+    "Mission 4: Hello, ", 
+    props.name, 
+    "!"
+  );
+}
+
+const App = Didact.createElement(Greeting, { name: "Function Components" });
+
+Didact.render(App, container);
