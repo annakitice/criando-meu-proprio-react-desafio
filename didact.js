@@ -2,8 +2,6 @@ let nextUnitOfWork = null
 let currentRoot = null
 let wipRoot = null
 let deletions = null
-
-// --- MISSÃO 4: Cursores globais para os Hooks ---
 let wipFiber = null
 let hookIndex = null
 
@@ -89,58 +87,12 @@ function performUnitOfWork(fiber) {
   return null
 }
 
-// --- MISSÃO 4: updateFunctionComponent atualizado ---
 function updateFunctionComponent(fiber) {
-  // Prepara o cursor para o hook
   wipFiber = fiber
   hookIndex = 0
   wipFiber.hooks = []
-  
-  // Quando chamamos fiber.type(fiber.props), qualquer chamada de useState
-  // dentro do componente conseguirá ler e alterar os cursores acima.
   const children = [fiber.type(fiber.props)]
   reconcileChildren(fiber, children)
-}
-
-// --- MISSÃO 4: Implementação do useState ---
-function useState(initial) {
-  // 1. Recupera o estado antigo
-  const oldHook =
-    wipFiber.alternate &&
-    wipFiber.alternate.hooks &&
-    wipFiber.alternate.hooks[hookIndex]
-
-  // 2. Inicializa o novo hook
-  const hook = {
-    state: oldHook ? oldHook.state : initial,
-    queue: [],
-  }
-
-  // 3. Processa a fila de atualizações (Batching)
-  const actions = oldHook ? oldHook.queue : []
-  actions.forEach(action => {
-    hook.state = typeof action === "function" ? action(hook.state) : action
-  })
-
-  // 4. O Dispatcher (setState)
-  const setState = action => {
-    hook.queue.push(action)
-    
-    // Configura o wipRoot para iniciar uma nova renderização (acorda o Work Loop)
-    wipRoot = {
-      dom: currentRoot.dom,
-      props: currentRoot.props,
-      alternate: currentRoot,
-    }
-    nextUnitOfWork = wipRoot
-    deletions = []
-  }
-
-  // 5. Avança o cursor
-  wipFiber.hooks.push(hook)
-  hookIndex++
-
-  return [hook.state, setState]
 }
 
 function updateHostComponent(fiber) {
@@ -215,11 +167,14 @@ function reconcileChildren(wipFiber, elements) {
 
     if (index === 0) {
       wipFiber.child = newFiber
-    } else if (prevSibling) {
+    } else if (newFiber) {
       prevSibling.sibling = newFiber
     }
 
-    prevSibling = newFiber
+    if (newFiber) {
+      prevSibling = newFiber
+    }
+
     index++
   }
 }
@@ -316,27 +271,40 @@ function updateDom(dom, prevProps, nextProps) {
     })
 }
 
-// Adicionamos o useState aqui para ser consumido em outros arquivos!
+function useState(initial) {
+  const oldHook =
+    wipFiber.alternate &&
+    wipFiber.alternate.hooks &&
+    wipFiber.alternate.hooks[hookIndex]
+
+  const hook = {
+    state: oldHook ? oldHook.state : initial,
+    queue: [],
+  }
+
+  const actions = oldHook ? oldHook.queue : []
+  actions.forEach(action => {
+    hook.state = typeof action === "function" ? action(hook.state) : action
+  })
+
+  const setState = action => {
+    hook.queue.push(action)
+    wipRoot = {
+      dom: currentRoot.dom,
+      props: currentRoot.props,
+      alternate: currentRoot,
+    }
+    deletions = []
+    nextUnitOfWork = wipRoot
+  }
+
+  wipFiber.hooks.push(hook)
+  hookIndex++
+  return [hook.state, setState]
+}
+
 const Didact = {
   createElement,
   render,
-  useState, 
+  useState,
 }
-
-// --- CÓDIGO DE TESTE MISSÃO 4 ---
-const container = document.getElementById("root");
-
-// Um Componente Funcional de verdade!
-function Greeting(props) {
-  return Didact.createElement(
-    "h1", 
-    { style: "color: green; font-family: sans-serif;" }, 
-    "Mission 4: Hello, ", 
-    props.name, 
-    "!"
-  );
-}
-
-const App = Didact.createElement(Greeting, { name: "Function Components" });
-
-Didact.render(App, container);
